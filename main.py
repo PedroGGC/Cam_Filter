@@ -2,356 +2,17 @@ import cv2
 import pygame
 import numpy as np
 import sys
+from config import *
+from filters import *
+from ui import FilterPanel
 
-# --- Constantes Configuráveis ---
-FONT_SIZE = 14
-FG_COLOR = (255, 255, 255)  # Branco
-BG_COLOR = (0, 0, 0)        # Preto
-ASCII_CHARS = " .':-=+*#%@$"  # Escala de 12 níveis de densidade
-
-# Configurações do Painel Lateral
-PANEL_WIDTH = 240
-PANEL_BG = (15, 15, 18)
-PANEL_BORDER = (40, 40, 45)
-ACTIVE_HIGHLIGHT = (20, 220, 100)  # Verde vibrante moderno
-
-class Filter:
-    def __init__(self, name, apply_fn, is_ascii=False):
-        self.name = name
-        self.apply_fn = apply_fn
-        self.intensity = 0.5
-        self.is_ascii = is_ascii
-
-
-def apply_deep_dive(frame, intensity):
-    # Quantização agressiva: intenso = menos de 4 cores
-    levels = max(2, int(32 - (intensity * 30)))
-    ratio = 256.0 / levels
-    quantized = np.floor(frame / ratio) * ratio
-    return quantized.astype(np.uint8)
-
-def apply_style(frame, intensity):
-    h, w = frame.shape[:2]
-    small = cv2.resize(frame, (w // 2, h // 2))
-    # Stylization com valores extremos de desfoque vetorial
-    sigma_s = float(max(1.0, intensity * 200))
-    sigma_r = float(max(0.1, intensity * 0.9))
-    styled = cv2.stylization(small, sigma_s=sigma_s, sigma_r=sigma_r)
-    return cv2.resize(styled, (w, h))
-
-def apply_neon_edges(frame, intensity):
-    blur = cv2.GaussianBlur(frame, (5, 5), 0)
-    edges = cv2.Canny(blur, 50, 150)
-    # Dilatação leve para aumentar as "linhas" do neon
-    kernel = np.ones((2, 2), np.uint8)
-    edges = cv2.dilate(edges, kernel, iterations=1)
-    
-    edges_bgr = np.zeros_like(frame)
-    edges_bgr[edges > 0] = [0, 255, 65]  # Verde Neon
-
-    # Adicionar um desfoque em cima da imagem preta de bordas para brilhar (glow)
-    glow = cv2.GaussianBlur(edges_bgr, (15, 15), 0)
-    edges_with_glow = cv2.addWeighted(edges_bgr, 1.0, glow, 2.0, 0)
-    
-    # Misturar com o cenário real em menor intensidade
-    dark = (frame * max(0.0, 1.0 - intensity)).astype(np.uint8)
-    res = cv2.addWeighted(dark, 1.0, edges_with_glow, intensity * 2.0, 0)
-    return np.clip(res, 0, 255).astype(np.uint8)
-
-def apply_pixelate(frame, intensity):
-    h, w = frame.shape[:2]
-    block = max(1, int(intensity * 100))
-    if block == 1:
-        return frame
-    small = cv2.resize(frame, (max(1, w // block), max(1, h // block)), interpolation=cv2.INTER_LINEAR)
-    return cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
-
-def apply_glitch(frame, intensity):
-    shift = int(intensity * 100)
-    if shift <= 0:
-        return frame
-    result = np.zeros_like(frame)
-    # Canal Azul arrastado pra esquerda, Vermelho pra direita e Verde intacto
-    result[:, :, 0] = np.roll(frame[:, :, 0], -shift, axis=1)
-    result[:, :, 1] = frame[:, :, 1]
-    result[:, :, 2] = np.roll(frame[:, :, 2], shift, axis=1)
-    return result
-
-def apply_pencil_sketch(frame, intensity):
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    inv = cv2.bitwise_not(gray)
-    blur_size = int(intensity * 40) * 2 + 1 
-    if blur_size < 3: blur_size = 3
-    blur = cv2.GaussianBlur(inv, (blur_size, blur_size), 0)
-    # O Sketch emula desenho usando divisão simples
-    sketch = cv2.divide(gray, 255 - blur, scale=256)
-    sketch_bgr = cv2.cvtColor(sketch, cv2.COLOR_GRAY2BGR)
-    weight = min(1.0, intensity * 1.5)
-    return cv2.addWeighted(frame, 1.0 - weight, sketch_bgr, weight, 0)
-
-
-def apply_cyberpunk(frame, intensity):
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    # ColorMap COOL renderiza Cyan em tons claros e Magenta/Purple em tons escuros
-    cmap = cv2.applyColorMap(gray, cv2.COLORMAP_COOL)
-    return cv2.addWeighted(frame, 1.0 - intensity, cmap, intensity, 0)
-
-def apply_ascii_contrast(gray_frame, intensity):
-    # CLAHE Equaliza o histograma revelando feições ocultas na sombra (Vital para o ASCII em salas escuras)
-    limit = 1.0 + (intensity * 4.0)
-    clahe = cv2.createCLAHE(clipLimit=limit, tileGridSize=(8,8))
-    enhanced = clahe.apply(gray_frame)
-    # Mapping
-    alpha = 1.0 + (intensity * 1.5)  # Multiplicador de Contraste
-    beta = (intensity - 0.5) * 50    # Aditivo de brilho
-    return cv2.convertScaleAbs(enhanced, alpha=alpha, beta=beta)
-
-class FilterPanel:
-    def __init__(self, filters, font, window_width, window_height):
-        self.filters = filters
-        # Fonte para painel UI (Sans-serif moderno ao invés de monospace)
-        self.ui_font = pygame.font.SysFont('segoeui', 15, bold=True)
-        if getattr(self.ui_font, 'get_height', lambda: 0)() == 0:
-            self.ui_font = pygame.font.SysFont('arial', 15, bold=True)
-            
-        self.small_font = pygame.font.SysFont('segoeui', 13)
-        if getattr(self.small_font, 'get_height', lambda: 0)() == 0:
-            self.small_font = pygame.font.SysFont('arial', 13)
-            
-        self.window_width = window_width
-        self.window_height = window_height
-        self.is_open = True
-        self.active_idx = -1
-        self.dragging = False
-        
-        # Propriedades do Input de Intensidade
-        self.input_rect = pygame.Rect(0, 0, 0, 0)
-        self.input_active = False
-        self.input_text = ""
-        
-        # Dimensions
-        self.panel_width = PANEL_WIDTH
-        self.toggle_width = 24
-        self.toggle_height = 60
-        
-        # Rects
-        self.update_rects()
-
-    def update_rects(self):
-        """Update rectangles based on whether the panel is open or closed"""
-        toggle_y = (self.window_height - self.toggle_height) // 2
-        if self.is_open:
-            self.rect = pygame.Rect(self.window_width - self.panel_width, 0, self.panel_width, self.window_height)
-            self.toggle_rect = pygame.Rect(self.rect.left - self.toggle_width, toggle_y, self.toggle_width, self.toggle_height)
-        else:
-            self.rect = pygame.Rect(self.window_width + self.panel_width, 0, 0, self.window_height)
-            self.toggle_rect = pygame.Rect(self.window_width - self.toggle_width, toggle_y, self.toggle_width, self.toggle_height)
-            
-        self.slider_rect = pygame.Rect(0, 0, 0, 0)
-        self.filter_rects = []
-        
-        if self.is_open:
-            y_offset = 60
-            for f in self.filters:
-                # Com margin nos botões para um visual flutuante arredondado
-                r = pygame.Rect(self.rect.x + 15, self.rect.y + y_offset, self.rect.width - 30, 36)
-                self.filter_rects.append(r)
-                y_offset += 44
-
-    def toggle(self):
-        self.is_open = not self.is_open
-        self.update_rects()
-
-    def handle_event(self, event):
-        if event.type == pygame.KEYDOWN:
-            if self.input_active:
-                if event.key == pygame.K_RETURN or event.key == pygame.K_KP_ENTER or event.key == pygame.K_ESCAPE:
-                    self.input_active = False
-                    self.apply_input_text()
-                elif event.key == pygame.K_BACKSPACE:
-                    self.input_text = self.input_text[:-1]
-                elif event.unicode.isdigit() and len(self.input_text) < 3:
-                    self.input_text += event.unicode
-                return True, False
-                
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1:
-                # Handle toggle click
-                if self.toggle_rect.collidepoint(event.pos):
-                    self.toggle()
-                    return True, True  # (Handled, Needs Resize)
-                    
-                if not self.is_open:
-                    return False, False
-                    
-                # Clicked outside of input box -> deselect and apply
-                if self.input_active and not self.input_rect.collidepoint(event.pos):
-                    self.input_active = False
-                    self.apply_input_text()
-                    
-                # Handle input click
-                if self.active_idx != -1 and self.input_rect.collidepoint(event.pos):
-                    self.input_active = True
-                    self.input_text = ""
-                    return True, False
-                    
-                # Handle slider grab
-                if self.active_idx != -1 and self.slider_rect.collidepoint(event.pos):
-                    self.dragging = True
-                    self.update_slider(event.pos[0])
-                    return True, False
-                
-                # Handle filter selection
-                for i, rect in enumerate(self.filter_rects):
-                    if rect.collidepoint(event.pos):
-                        if self.active_idx == i:
-                            self.active_idx = -1
-                        else:
-                            self.active_idx = i
-                        return True, False
-                        
-        elif event.type == pygame.MOUSEBUTTONUP:
-            if event.button == 1:
-                self.dragging = False
-                
-        elif event.type == pygame.MOUSEMOTION:
-            if self.dragging and self.active_idx != -1 and self.is_open:
-                self.update_slider(event.pos[0])
-                return True, False
-                
-        return False, False
-
-    def apply_input_text(self):
-        if not self.input_text:
-            val = 0
-        else:
-            try:
-                val = int(self.input_text)
-            except ValueError:
-                val = int(self.filters[self.active_idx].intensity * 100) if self.active_idx != -1 else 0
-                
-        val = max(0, min(100, val))
-        if self.active_idx != -1:
-            self.filters[self.active_idx].intensity = val / 100.0
-
-    def update_slider(self, mouse_x):
-        track_start = self.rect.x + 18
-        track_end = self.rect.right - 18 - 60
-        if track_end <= track_start:
-            return
-        val = (mouse_x - track_start) / float(track_end - track_start)
-        self.filters[self.active_idx].intensity = max(0.0, min(1.0, val))
-        if not self.input_active:
-            self.input_text = str(int(self.filters[self.active_idx].intensity * 100))
-
-    def get_active_filter(self):
-        if self.active_idx != -1:
-            return self.filters[self.active_idx]
-        return None
-
-    def draw(self, surface):
-        # Draw toggle button (floating and rounded)
-        pygame.draw.rect(surface, (50, 50, 50), self.toggle_rect, border_radius=6)
-        
-        # Draw arrow vertically centered
-        arrow_color = (200, 200, 200)
-        
-        if self.is_open:
-            # Right arrow ▶
-            points = [(self.toggle_rect.left + 8, self.toggle_rect.centery - 6),
-                      (self.toggle_rect.left + 8, self.toggle_rect.centery + 6),
-                      (self.toggle_rect.right - 8, self.toggle_rect.centery)]
-        else:
-            # Left arrow ◀
-            points = [(self.toggle_rect.right - 8, self.toggle_rect.centery - 6),
-                      (self.toggle_rect.right - 8, self.toggle_rect.centery + 6),
-                      (self.toggle_rect.left + 8, self.toggle_rect.centery)]
-                      
-        # Anti-aliased polygon for arrow
-        pygame.draw.polygon(surface, arrow_color, points)
-        pygame.draw.aalines(surface, arrow_color, True, points)
-        
-        if not self.is_open:
-            return
-            
-        # Draw main panel
-        pygame.draw.rect(surface, PANEL_BG, self.rect)
-        pygame.draw.line(surface, PANEL_BORDER, (self.rect.x, self.rect.y), (self.rect.x, self.rect.bottom), 1)
-        
-        # Title "FILTROS"
-        title_text = self.ui_font.render("FILTROS", True, (130, 130, 140))
-        surface.blit(title_text, (self.rect.x + 20, self.rect.y + 20))
-        
-        for i, (f, rect) in enumerate(zip(self.filters, self.filter_rects)):
-            if i == self.active_idx:
-                # Active button style: Highlighted background, rounded corners
-                pygame.draw.rect(surface, (45, 45, 55), rect, border_radius=8)
-                # Outer glow/border fake
-                pygame.draw.rect(surface, ACTIVE_HIGHLIGHT, rect, width=2, border_radius=8)
-                color = ACTIVE_HIGHLIGHT
-            else:
-                # Inactive button hoverable-looking
-                pygame.draw.rect(surface, (22, 22, 26), rect, border_radius=8)
-                color = (160, 160, 170)
-                
-            text = self.ui_font.render(f.name, True, color)
-            # Center text vertically in the button
-            text_rect = text.get_rect(midleft=(rect.x + 15, rect.centery))
-            surface.blit(text, text_rect)
-            
-        if self.active_idx != -1:
-            f = self.filters[self.active_idx]
-            slider_y = self.filter_rects[-1].bottom + 50
-            
-            # Label
-            val_text = self.small_font.render("Intensidade:", True, (160, 160, 170))
-            surface.blit(val_text, (self.rect.x + 18, slider_y - 25))
-            
-            # Track dimensions
-            track_start = self.rect.x + 18
-            track_end = self.rect.right - 18 - 60
-            self.slider_rect = pygame.Rect(track_start - 10, slider_y - 12, track_end - track_start + 20, 24)
-            
-            # Background Track (rounded)
-            pygame.draw.rect(surface, (30, 30, 35), (track_start, slider_y - 3, track_end - track_start, 6), border_radius=3)
-            
-            # Filled Track
-            filled_width = int(f.intensity * (track_end - track_start))
-            if filled_width > 0:
-                pygame.draw.rect(surface, ACTIVE_HIGHLIGHT, (track_start, slider_y - 3, filled_width, 6), border_radius=3)
-            
-            # Handle Grip
-            handle_x = track_start + filled_width
-            pygame.draw.circle(surface, (255, 255, 255), (handle_x, slider_y), 7)
-            pygame.draw.circle(surface, ACTIVE_HIGHLIGHT, (handle_x, slider_y), 7, width=2)
-            
-            # Input Field Text Box
-            self.input_rect = pygame.Rect(track_end + 10, slider_y - 12, 52, 22)
-            border_color = (200, 200, 200) if self.input_active else (100, 100, 100)
-            pygame.draw.rect(surface, (20, 20, 20), self.input_rect, border_radius=3)
-            pygame.draw.rect(surface, border_color, self.input_rect, 1, border_radius=3)
-
-            # Draw text inside input
-            display_text = self.input_text if self.input_active else str(int(f.intensity * 100))
-            txt_surf = self.small_font.render(display_text, True, (255, 255, 255))
-            txt_rect = txt_surf.get_rect(center=self.input_rect.center)
-            surface.blit(txt_surf, txt_rect)
-
-            # Draw blinking cursor
-            if self.input_active and pygame.time.get_ticks() % 1000 < 500:
-                cursor_x = txt_rect.right + 2
-                cursor_y1 = txt_rect.top
-                cursor_y2 = txt_rect.bottom
-                pygame.draw.line(surface, (255, 255, 255), (cursor_x, cursor_y1), (cursor_x, cursor_y2), 1)
-
-
-class ASCIICamera:
+class Filters_cam:
     def __init__(self):
         pygame.init()
         info = pygame.display.Info()
         self.screen = pygame.display.set_mode((info.current_w, info.current_h), pygame.NOFRAME)
         self.window_width, self.window_height = self.screen.get_size()
-        pygame.display.set_caption("ASCIICamera - Real-time ASCII")
+        pygame.display.set_caption("Filters_cam - Real-time Filters")
         self.clock = pygame.time.Clock()
         
         self.font = pygame.font.SysFont('couriernew', FONT_SIZE, bold=True)
@@ -366,17 +27,20 @@ class ASCIICamera:
             
         filters = [
             Filter("ASCII Matrix", apply_ascii_contrast, is_ascii=True),
-            Filter("Deep Dive", apply_deep_dive),
-            Filter("Style", apply_style),
+            Filter("Gameboy Camera", apply_gameboy),
+            Filter("Blueprint Plan", apply_blueprint),
+            Filter("CRT Monitor", apply_crt),
             Filter("Neon Edges", apply_neon_edges),
-            Filter("Glitch RGB", apply_glitch),
+            Filter("Halftone Art", apply_halftone),
+            Filter("Ghost Trails", apply_ghost_trails),
             Filter("Pixelate TV", apply_pixelate),
             Filter("Pencil Sketch", apply_pencil_sketch),
-            Filter("Cyberpunk", apply_cyberpunk)
+            Filter("Glitch RGB", apply_glitch),
+            Filter("Deep Dive", apply_deep_dive)
         ]
         
         self.filter_panel = FilterPanel(filters, self.font, self.window_width, self.window_height)
-        self.filter_panel.active_idx = -1 # Inicialmente Inicia Sem NENHUM filtro ativo (Apenas câmera natural)
+        self.filter_panel.active_idx = -1
         self.aspect_ratio_correction = 0.55
         self.ascii_chars = list(ASCII_CHARS)
         self.invert = False
@@ -385,9 +49,23 @@ class ASCIICamera:
         self.recalculate_ascii_grid()
         self._prerender_fonts()
         
-        self.cap = cv2.VideoCapture(0)
+        self.screen.fill(BG_COLOR)
+        loading_font = pygame.font.SysFont('segoeui', 22, bold=True)
+        if getattr(loading_font, 'get_height', lambda: 0)() == 0:
+            loading_font = pygame.font.SysFont('arial', 22, bold=True)
+            
+        text_surf = loading_font.render("Iniciando lente da câmera...", True, (200, 200, 200))
+        text_rect = text_surf.get_rect(center=(self.window_width//2, self.window_height//2))
+        self.screen.blit(text_surf, text_rect)
+        pygame.display.flip()
+        
+        # Tenta Iniciar o DirectShow primeiro (Muito mais rápido no Windows para evitar tela preta)
+        self.cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_DSHOW)
         if not self.cap.isOpened():
-            print("Erro: Câmera não encontrada ou não pode ser aberta.")
+            self.cap = cv2.VideoCapture(CAMERA_INDEX)
+            
+        if not self.cap.isOpened():
+            print(f"Erro: Câmera {CAMERA_INDEX} não encontrada ou não pode ser aberta.")
             sys.exit(1)
 
     def recalculate_ascii_grid(self):
@@ -415,8 +93,6 @@ class ASCIICamera:
         return cv2.flip(frame, 1)
 
     def frame_to_ascii(self, frame, active_filter=None):
-        """Conversão em ASCII via Numpy, utilizando os parâmetros de controle de imagem se ativos"""
-        # Se for o filtro próprio do ASCII, podemos regular a intensidade e brilho
         if active_filter and active_filter.is_ascii:
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             gray = active_filter.apply_fn(gray, active_filter.intensity)
@@ -424,7 +100,6 @@ class ASCIICamera:
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             
         orig_h, orig_w = gray.shape
-        
         target_ratio = (self.cols / self.rows) * self.aspect_ratio_correction
         camera_ratio = orig_w / orig_h
         
@@ -447,8 +122,6 @@ class ASCIICamera:
         return indices
 
     def render_ascii(self, indices):
-        """Renderiza apenas em modo ASCII usando a lógica super otimizada blits()"""
-        # Em modo ASCII ativo, a inversão funciona
         if self.invert:
             self.screen.fill(FG_COLOR)
             chars = self.char_surfaces_inverted
@@ -466,28 +139,18 @@ class ASCIICamera:
         self.screen.blits(blits_data)
         
     def render_image_filter(self, frame, active_filter):
-        """Aplica o filtro visual da imagem e bita diretamente na tela ignorando o ASCII"""
-        # Limpar fundo default
         self.screen.fill(BG_COLOR)
         
-        # O filtro aplica-se no frame raw (capturado)
         if active_filter is not None:
             filtered_frame = active_filter.apply_fn(frame, active_filter.intensity)
         else:
             filtered_frame = frame
         
-        # O OpenCV puxa BGR mas Pygame usa RGB 
         rgb_frame = cv2.cvtColor(filtered_frame, cv2.COLOR_BGR2RGB)
-        
-        # Converte o array para Pygame Surface preservando a cor original
-        # O OpenCV retorna `(Height, Width, 3)` mas o surface aguarda `(Width, Height)`
-        # É uma operação veloz mas no layout numpy a transpota corrige isso: swapaxes.
         py_img = pygame.image.frombuffer(rgb_frame.tobytes(), (rgb_frame.shape[1], rgb_frame.shape[0]), "RGB")
         
         orig_h, orig_w = py_img.get_height(), py_img.get_width()
         
-        # A conta aqui procura encaixar perfeitamente a imagem "limpa" para no ratio correto
-        # na área limítrofe definida para o ASCII:
         target_w = self.ascii_width
         target_h = self.ascii_height
         
@@ -495,11 +158,9 @@ class ASCIICamera:
         camera_ratio = orig_w / orig_h
         
         if camera_ratio > target_ratio:
-            # Fit by width
             display_w = target_w
             display_h = int(target_w / camera_ratio)
         else:
-            # Fit by height
             display_h = target_h
             display_w = int(target_h * camera_ratio)
             
@@ -529,13 +190,10 @@ class ASCIICamera:
             if frame is not None:
                 active_filter = self.filter_panel.get_active_filter()
                 
-                # Se active_filter é do tipo is_ascii, desenha em caracteres
                 if active_filter is not None and active_filter.is_ascii:
-                    # Pipeline ASCII puro (Inversão permitida)
                     indices = self.frame_to_ascii(frame, active_filter)
                     self.render_ascii(indices)
                 else:
-                    # Pipeline Image/Filter - Caso ativo caia em None, cai para a camera pura aqui tbm
                     self.render_image_filter(frame, active_filter)
                 
             self.filter_panel.draw(self.screen)
@@ -547,5 +205,5 @@ class ASCIICamera:
         pygame.quit()
 
 if __name__ == "__main__":
-    app = ASCIICamera()
+    app = Filters_cam()
     app.run()
