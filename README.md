@@ -1,70 +1,75 @@
-# ASCIICamera 📸💻
+# Filters_cam
 
-Um software de renderização em tempo real construído localmente em Python (`Pygame` e `OpenCV`) que captura a alimentação da sua webcam nativa e a converte de forma incrivelmente rápida para Matrizes de caracteres ASCII.
+Um software de renderização em tempo real construído localmente em Python (Pygame e OpenCV) que captura a alimentação da sua webcam nativa e a converte de forma incrivelmente rápida.
 
-Além do modo ASCII clássico (preto e branco em densidade configurável), o projeto conta com um **Painel Retrátil Dinâmico** que disponibiliza 5 filtros de imagem que usam acelerações do Numpy e convoluções reais via OpenCV.
-
-![ASCIICamera - Real-time Preview]((Imagem de Exemplo Omitida))
+Além do modo ASCII clássico (preto e branco em densidade configurável), o projeto conta com um Painel Retrátil Dinâmico que disponibiliza filtros criativos de imagem que usam aceleração em arrays nativos.
 
 ---
 
-## 🌟 Funcionalidades
+## Funcionalidades
 
-- **Mapeamento Vetorizado de Caracteres**: A imagem capturada não passa por lentos loops em Python; ao invés disso, uma densidade de escala de 12 níveis de luz é mapeada imediatamente em processamento nativo via Numpy C-arrays.
-- **Painel Lateral Toggleable**: Na borda direita da tela, um botão em forma de seta (`◀`/`▶`) exibe ou recolhe um menu cheio de propriedades de processamento de imagem sem interferir no FPS ou causar esticamentos de aspect-ratio.
-- **Modo Tela Cheia Borderless**: Usa 100% da resolução do seu monitor preservando funções importantes de janelas como Alt-Tab e PrintScreen integradas pelo SO (eliminando travamentos de _exclusive fullscreens_ clássicos).
-- **Inversão Rápida**: Pressione a tecla `I` durante o modo de visualização puramente ASCII para inverter as paletas de cores e gerar um fundo branco sólido para leitura distinta no escuro.
-
----
-
-## 🎨 Filtros Embutidos (Painel Lateral)
-
-O projeto possui dois pipelines paralelos completamente diferentes que não entram em conflito e você pode chavear livremente clicando neles no painel direito:
-
-1. **Modo ASCII Puro (Inativo)**: Pipeline que lê os pixels de brilho, quantiza as matrizes, e desenha fontes pré-armazenadas (_font pre-rendering cache_) via o draw engine de `.blits()` do pygame. É o estado inicial.
-2. **Grayscale**: Exibe a imagem direta combinando a força de saturação entre imagem colorida padrão e preto-e-branco.
-3. **Deep Dive**: Sub-quantiza todos os canais de cor da cena (R,G,B). Em intensidade `0.5`, gera imagens pesadamente posterizadas muito parecidas com fotografias pixel-arts ou jogos retro (sem dithering).
-4. **Noise**: Injúria de sinal estático. Somam-se níveis controlados de pixels aleatórios ao frame.
-5. **Embossed**: Roda um filtro com _Kernel Espacial_ `2D` para calcular os gradientes e revelar as bordas ressaltadas/côncavas da alimentação como se estivessem engravadas no cimento.
-6. **Style**: Usa uma rede neural ultra-rápida implementada pelo OpenCV (`cv2.stylization`) executada em meia resolução. Esse filtro dá um forte caráter de pintura à base de água colorida para qualquer ambiente.
-
-> _Dica:_ Ao habilitar qualquer filtro, você tem um **Slider de Intensidade (%)** respectivo abaixo do nome dele para ter o total controle do blend entre frame original <=> frame modificado.
+- Mapeamento Vetorizado de Caracteres: A imagem capturada em ASCII não passa por lentos loops. Uma densidade de escala é mapeada de imediato via processamento nativo numpy.
+- Painel Lateral Oculto: Na borda direita da tela, um clique simples expande um menu com propriedades de processamento e sliders sem interferir no framerate.
+- Modo Tela Cheia Borderless: Usa 100% da resolução do seu monitor preservando funções importantes integradas ao OS, dispensando engasgos clássicos.
+- Inversão Rápida: Pressionando a tecla I durante o uso puramente em letras, ocorre a reversão focal da malha.
 
 ---
 
-## 🚀 Instalação e Execução
+## Filtros de Lente
 
-Você precisará de Python `>=3.7` instalado em sua máquina.
+Há pipelines paralelos de processamento que podem ser selecionados livremente no grid cinza:
 
-1. **Clone da pasta**
-   Acesse a pasta correspondente no seu explorador e instale todas as dependências na sua linha de comando:
+1. Modo de Letras (Inativo): Leitura quantizada do brilho natural transposto via fontes cache mode quantificadas pelo pygame array pointer.
+2. Deep Dive: Reduz agressivamente e quantiza paletas gerando visuais parecidos com fotografias desativadas retro antigas das maquinas de bits antigos.
+3. Style: Um algoritmo vetor e stylization que emula traços artísticos diluindo o ruído a favor de massas de cores de agua mais cheias.
+4. Neon Edges: Contrai e detecta bordas injetando dilatadores radioativos fluorescentes.
+5. Glitch RGB: Interrompe e empurra frames RGB causando dissincronia virtual vermelha e azul (Efeito TV com sinal fraco).
+6. Pixelate TV: Força uma interpolação por proximidade bruta transformando você em blocos massivos quadrados.
+7. Pencil Sketch: Gera inversões blur sobre a paleta cinza desenhando o ambiente como obra em papel.
+8. Cyberpunk: Mapa que desloca tonalidades pra rosa escuro contra branco e ciano usando LUTs em C++.
 
-   ```bash
-   pip install opencv-python numpy pygame
-   ```
-
-2. **Inicie o script**
-
-   ```bash
-   python main.py
-   ```
-
-3. **Uso de Teclas**:
-   - **Aperte `Q`** ou **`ESC`** a qualquer instante para fechar o programa e desativar sua webcam.
-   - **Aperte `I`** para alternar a inversão de cores (válido somente no painel original invisível para ASCII).
-   - **Clique no seletor de canto direito:** Para expor ou puxar de volta o painel cinza de filtros.
+Através dos Sliders de Intensidade, há campos dinâmicos integrados para se digitar porcentagens de 0-100 para regular com precisão do teclado a mistura visual.
 
 ---
 
-## 🛠️ Modificando as Cores
+## Requisitos de Maquina e Instalacao
 
-As cores podem ser facilmente ajustadas alterando as constantes localizadas nas primeiras 10 linhas do arquivo `main.py`:
+Para executar esse projeto voce precisa ter o **Python** instalado em sua maquina. Caso nao tenha, siga os passos abaixo para garantir que o ambiente seja configurado corretamente e comandos funcionem sem erros:
+
+1. **Baixe o Python Oficial**: Acesse o site oficial atraves do link [https://www.python.org/downloads/](https://www.python.org/downloads/) e faca o download da versao mais recente para o Windows.
+2. **Adicione o Python ao PATH**: Abra o executavel do instalador. Na primeira tela (antes de clicar em "Install Now"), marque obrigatoriamente a caixa de selecao que diz **"Add Python to PATH"** (ou "Add python.exe to PATH") no rodape da janela. Isso e critico para o proximo passo funcionar.
+
+Se o seu Python ja estiver instalado e configurado, basta abrir o Prompt de Comando (CMD) ou PowerShell na pasta do projeto e executar a construcao final:
+
+```bash
+pip install opencv-python numpy pygame
+```
+
+---
+
+## Como Comecar
+
+Com tudo pronto, apenas ative a ferramenta utilizando:
+
+python main.py
+
+Para uso de atalhos e utilidades ao longo da utilizacao:
+
+- Tecla Q ou ESC: Interrompe o processo finalizando com segurança a ocupação da sua webcam nativa.
+- Tecla I: Inverte cores (Restrito ao modo padrao de teclado).
+
+
+---
+
+## Customizacoes Base
+
+As cores do modo em letras podem ser modificadas logo no topo do arquivo main.py:
 
 ```python
 FONT_SIZE = 14
-FG_COLOR = (255, 255, 255)  # Branco - Cor principal da fonte ASCII
-BG_COLOR = (0, 0, 0)        # Preto - Fundo
-ASCII_CHARS = " .':-=+*#%@$"  # Do mais escuro para o mais claro
+FG_COLOR = (255, 255, 255)
+BG_COLOR = (0, 0, 0)
+ASCII_CHARS = " .':-=+*#%@$"
 ```
 
-_Experimente mudar o `FG_COLOR` para `(0, 255, 65)` para voltar à clássica paleta Verde tipo Matrix!_
+

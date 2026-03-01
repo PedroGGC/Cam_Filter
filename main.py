@@ -10,10 +10,10 @@ BG_COLOR = (0, 0, 0)        # Preto
 ASCII_CHARS = " .':-=+*#%@$"  # Escala de 12 níveis de densidade
 
 # Configurações do Painel Lateral
-PANEL_WIDTH = 220
-PANEL_BG = (30, 30, 30)
-PANEL_BORDER = (60, 60, 60)
-ACTIVE_HIGHLIGHT = (0, 255, 65)  # Borda lateral colorida
+PANEL_WIDTH = 240
+PANEL_BG = (15, 15, 18)
+PANEL_BORDER = (40, 40, 45)
+ACTIVE_HIGHLIGHT = (20, 220, 100)  # Verde vibrante moderno
 
 class Filter:
     def __init__(self, name, apply_fn, is_ascii=False):
@@ -109,29 +109,43 @@ def apply_ascii_contrast(gray_frame, intensity):
 class FilterPanel:
     def __init__(self, filters, font, window_width, window_height):
         self.filters = filters
-        self.font = font
-        self.small_font = pygame.font.Font(None, 20)
+        # Fonte para painel UI (Sans-serif moderno ao invés de monospace)
+        self.ui_font = pygame.font.SysFont('segoeui', 15, bold=True)
+        if getattr(self.ui_font, 'get_height', lambda: 0)() == 0:
+            self.ui_font = pygame.font.SysFont('arial', 15, bold=True)
+            
+        self.small_font = pygame.font.SysFont('segoeui', 13)
+        if getattr(self.small_font, 'get_height', lambda: 0)() == 0:
+            self.small_font = pygame.font.SysFont('arial', 13)
+            
         self.window_width = window_width
         self.window_height = window_height
         self.is_open = True
         self.active_idx = -1
         self.dragging = False
         
+        # Propriedades do Input de Intensidade
+        self.input_rect = pygame.Rect(0, 0, 0, 0)
+        self.input_active = False
+        self.input_text = ""
+        
         # Dimensions
         self.panel_width = PANEL_WIDTH
         self.toggle_width = 24
+        self.toggle_height = 60
         
         # Rects
         self.update_rects()
 
     def update_rects(self):
         """Update rectangles based on whether the panel is open or closed"""
+        toggle_y = (self.window_height - self.toggle_height) // 2
         if self.is_open:
             self.rect = pygame.Rect(self.window_width - self.panel_width, 0, self.panel_width, self.window_height)
-            self.toggle_rect = pygame.Rect(self.rect.left - self.toggle_width, 0, self.toggle_width, self.window_height)
+            self.toggle_rect = pygame.Rect(self.rect.left - self.toggle_width, toggle_y, self.toggle_width, self.toggle_height)
         else:
-            self.rect = pygame.Rect(self.window_width, 0, 0, self.window_height)
-            self.toggle_rect = pygame.Rect(self.window_width - self.toggle_width, 0, self.toggle_width, self.window_height)
+            self.rect = pygame.Rect(self.window_width + self.panel_width, 0, 0, self.window_height)
+            self.toggle_rect = pygame.Rect(self.window_width - self.toggle_width, toggle_y, self.toggle_width, self.toggle_height)
             
         self.slider_rect = pygame.Rect(0, 0, 0, 0)
         self.filter_rects = []
@@ -139,15 +153,27 @@ class FilterPanel:
         if self.is_open:
             y_offset = 60
             for f in self.filters:
-                r = pygame.Rect(self.rect.x, self.rect.y + y_offset, self.rect.width, 40)
+                # Com margin nos botões para um visual flutuante arredondado
+                r = pygame.Rect(self.rect.x + 15, self.rect.y + y_offset, self.rect.width - 30, 36)
                 self.filter_rects.append(r)
-                y_offset += 40
+                y_offset += 44
 
     def toggle(self):
         self.is_open = not self.is_open
         self.update_rects()
 
     def handle_event(self, event):
+        if event.type == pygame.KEYDOWN:
+            if self.input_active:
+                if event.key == pygame.K_RETURN or event.key == pygame.K_KP_ENTER or event.key == pygame.K_ESCAPE:
+                    self.input_active = False
+                    self.apply_input_text()
+                elif event.key == pygame.K_BACKSPACE:
+                    self.input_text = self.input_text[:-1]
+                elif event.unicode.isdigit() and len(self.input_text) < 3:
+                    self.input_text += event.unicode
+                return True, False
+                
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 # Handle toggle click
@@ -157,6 +183,17 @@ class FilterPanel:
                     
                 if not self.is_open:
                     return False, False
+                    
+                # Clicked outside of input box -> deselect and apply
+                if self.input_active and not self.input_rect.collidepoint(event.pos):
+                    self.input_active = False
+                    self.apply_input_text()
+                    
+                # Handle input click
+                if self.active_idx != -1 and self.input_rect.collidepoint(event.pos):
+                    self.input_active = True
+                    self.input_text = ""
+                    return True, False
                     
                 # Handle slider grab
                 if self.active_idx != -1 and self.slider_rect.collidepoint(event.pos):
@@ -184,13 +221,28 @@ class FilterPanel:
                 
         return False, False
 
+    def apply_input_text(self):
+        if not self.input_text:
+            val = 0
+        else:
+            try:
+                val = int(self.input_text)
+            except ValueError:
+                val = int(self.filters[self.active_idx].intensity * 100) if self.active_idx != -1 else 0
+                
+        val = max(0, min(100, val))
+        if self.active_idx != -1:
+            self.filters[self.active_idx].intensity = val / 100.0
+
     def update_slider(self, mouse_x):
-        track_start = self.rect.x + 20
-        track_end = self.rect.right - 20
+        track_start = self.rect.x + 18
+        track_end = self.rect.right - 18 - 60
         if track_end <= track_start:
             return
         val = (mouse_x - track_start) / float(track_end - track_start)
         self.filters[self.active_idx].intensity = max(0.0, min(1.0, val))
+        if not self.input_active:
+            self.input_text = str(int(self.filters[self.active_idx].intensity * 100))
 
     def get_active_filter(self):
         if self.active_idx != -1:
@@ -198,26 +250,26 @@ class FilterPanel:
         return None
 
     def draw(self, surface):
-        # Draw toggle button
-        pygame.draw.rect(surface, (40, 40, 40), self.toggle_rect)
-        pygame.draw.line(surface, PANEL_BORDER, (self.toggle_rect.left, 0), (self.toggle_rect.left, self.window_height), 1)
+        # Draw toggle button (floating and rounded)
+        pygame.draw.rect(surface, (50, 50, 50), self.toggle_rect, border_radius=6)
         
         # Draw arrow vertically centered
-        arrow_y = self.window_height // 2
         arrow_color = (200, 200, 200)
         
         if self.is_open:
-            # Right arrow ▶ means click to close
-            points = [(self.toggle_rect.left + 6, arrow_y - 8),
-                      (self.toggle_rect.left + 6, arrow_y + 8),
-                      (self.toggle_rect.right - 6, arrow_y)]
+            # Right arrow ▶
+            points = [(self.toggle_rect.left + 8, self.toggle_rect.centery - 6),
+                      (self.toggle_rect.left + 8, self.toggle_rect.centery + 6),
+                      (self.toggle_rect.right - 8, self.toggle_rect.centery)]
         else:
-            # Left arrow ◀ means click to open
-            points = [(self.toggle_rect.right - 6, arrow_y - 8),
-                      (self.toggle_rect.right - 6, arrow_y + 8),
-                      (self.toggle_rect.left + 6, arrow_y)]
+            # Left arrow ◀
+            points = [(self.toggle_rect.right - 8, self.toggle_rect.centery - 6),
+                      (self.toggle_rect.right - 8, self.toggle_rect.centery + 6),
+                      (self.toggle_rect.left + 8, self.toggle_rect.centery)]
                       
+        # Anti-aliased polygon for arrow
         pygame.draw.polygon(surface, arrow_color, points)
+        pygame.draw.aalines(surface, arrow_color, True, points)
         
         if not self.is_open:
             return
@@ -226,39 +278,71 @@ class FilterPanel:
         pygame.draw.rect(surface, PANEL_BG, self.rect)
         pygame.draw.line(surface, PANEL_BORDER, (self.rect.x, self.rect.y), (self.rect.x, self.rect.bottom), 1)
         
-        if self.active_idx != -1:
-            active_name = self.filters[self.active_idx].name
-            title_text = self.font.render(active_name, True, (255, 255, 255))
-        else:
-            title_text = self.font.render("Filtros", True, (150, 150, 150))
-            
+        # Title "FILTROS"
+        title_text = self.ui_font.render("FILTROS", True, (130, 130, 140))
         surface.blit(title_text, (self.rect.x + 20, self.rect.y + 20))
         
         for i, (f, rect) in enumerate(zip(self.filters, self.filter_rects)):
             if i == self.active_idx:
-                pygame.draw.rect(surface, (60, 60, 60), rect)
-                pygame.draw.rect(surface, ACTIVE_HIGHLIGHT, (rect.x, rect.y, 3, rect.height))
-                color = (255, 255, 255)
+                # Active button style: Highlighted background, rounded corners
+                pygame.draw.rect(surface, (45, 45, 55), rect, border_radius=8)
+                # Outer glow/border fake
+                pygame.draw.rect(surface, ACTIVE_HIGHLIGHT, rect, width=2, border_radius=8)
+                color = ACTIVE_HIGHLIGHT
             else:
-                color = (180, 180, 180)
+                # Inactive button hoverable-looking
+                pygame.draw.rect(surface, (22, 22, 26), rect, border_radius=8)
+                color = (160, 160, 170)
                 
-            text = self.font.render(f.name, True, color)
-            surface.blit(text, (rect.x + 20, rect.y + 10))
+            text = self.ui_font.render(f.name, True, color)
+            # Center text vertically in the button
+            text_rect = text.get_rect(midleft=(rect.x + 15, rect.centery))
+            surface.blit(text, text_rect)
             
         if self.active_idx != -1:
             f = self.filters[self.active_idx]
             slider_y = self.filter_rects[-1].bottom + 50
             
-            val_text = self.small_font.render(f"Intensidade: {int(f.intensity * 100)}%", True, (200, 200, 200))
-            surface.blit(val_text, (self.rect.x + 20, slider_y - 25))
+            # Label
+            val_text = self.small_font.render("Intensidade:", True, (160, 160, 170))
+            surface.blit(val_text, (self.rect.x + 18, slider_y - 25))
             
-            track_start = self.rect.x + 20
-            track_end = self.rect.right - 20
-            self.slider_rect = pygame.Rect(track_start - 10, slider_y - 10, track_end - track_start + 20, 20)
+            # Track dimensions
+            track_start = self.rect.x + 18
+            track_end = self.rect.right - 18 - 60
+            self.slider_rect = pygame.Rect(track_start - 10, slider_y - 12, track_end - track_start + 20, 24)
             
-            pygame.draw.line(surface, (80, 80, 80), (track_start, slider_y), (track_end, slider_y), 4)
-            handle_x = int(track_start + f.intensity * (track_end - track_start))
-            pygame.draw.circle(surface, (200, 200, 200), (handle_x, slider_y), 8)
+            # Background Track (rounded)
+            pygame.draw.rect(surface, (30, 30, 35), (track_start, slider_y - 3, track_end - track_start, 6), border_radius=3)
+            
+            # Filled Track
+            filled_width = int(f.intensity * (track_end - track_start))
+            if filled_width > 0:
+                pygame.draw.rect(surface, ACTIVE_HIGHLIGHT, (track_start, slider_y - 3, filled_width, 6), border_radius=3)
+            
+            # Handle Grip
+            handle_x = track_start + filled_width
+            pygame.draw.circle(surface, (255, 255, 255), (handle_x, slider_y), 7)
+            pygame.draw.circle(surface, ACTIVE_HIGHLIGHT, (handle_x, slider_y), 7, width=2)
+            
+            # Input Field Text Box
+            self.input_rect = pygame.Rect(track_end + 10, slider_y - 12, 52, 22)
+            border_color = (200, 200, 200) if self.input_active else (100, 100, 100)
+            pygame.draw.rect(surface, (20, 20, 20), self.input_rect, border_radius=3)
+            pygame.draw.rect(surface, border_color, self.input_rect, 1, border_radius=3)
+
+            # Draw text inside input
+            display_text = self.input_text if self.input_active else str(int(f.intensity * 100))
+            txt_surf = self.small_font.render(display_text, True, (255, 255, 255))
+            txt_rect = txt_surf.get_rect(center=self.input_rect.center)
+            surface.blit(txt_surf, txt_rect)
+
+            # Draw blinking cursor
+            if self.input_active and pygame.time.get_ticks() % 1000 < 500:
+                cursor_x = txt_rect.right + 2
+                cursor_y1 = txt_rect.top
+                cursor_y2 = txt_rect.bottom
+                pygame.draw.line(surface, (255, 255, 255), (cursor_x, cursor_y1), (cursor_x, cursor_y2), 1)
 
 
 class ASCIICamera:
