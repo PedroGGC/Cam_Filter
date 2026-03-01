@@ -16,42 +16,106 @@ PANEL_BORDER = (60, 60, 60)
 ACTIVE_HIGHLIGHT = (0, 255, 65)  # Borda lateral colorida
 
 class Filter:
-    def __init__(self, name, apply_fn):
+    def __init__(self, name, apply_fn, is_ascii=False):
         self.name = name
         self.apply_fn = apply_fn
         self.intensity = 0.5
+        self.is_ascii = is_ascii
 
 def apply_grayscale(frame, intensity):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    # Valores agudos para alto contraste e sombras profundas em intensidade máxima
+    alpha = 1.0 + (intensity * 2.0)
+    beta = -50 * intensity
+    gray = cv2.convertScaleAbs(gray, alpha=alpha, beta=beta)
     gray_bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
-    return cv2.addWeighted(frame, 1.0 - intensity, gray_bgr, intensity, 0)
+    weight_gray = min(1.0, intensity * 1.5)
+    weight_color = max(0.0, 1.0 - weight_gray)
+    return cv2.addWeighted(frame, weight_color, gray_bgr, weight_gray, 0)
 
 def apply_deep_dive(frame, intensity):
-    levels = max(2, int(2 + intensity * 30))
+    # Quantização agressiva: intenso = menos de 4 cores
+    levels = max(2, int(32 - (intensity * 30)))
     ratio = 256.0 / levels
     quantized = np.floor(frame / ratio) * ratio
     return quantized.astype(np.uint8)
 
 def apply_noise(frame, intensity):
-    max_noise = int(intensity * 80)
+    # Amplificado de 80 pra 200 de saltos no RGB
+    max_noise = int(intensity * 200)
     if max_noise <= 0:
         return frame
     noise = np.random.randint(0, max_noise + 1, frame.shape, dtype=np.uint8)
     return cv2.add(frame, noise)
 
 def apply_embossed(frame, intensity):
-    kernel = np.array([[-2, -1, 0],
-                       [-1,  1, 1],
-                       [ 0,  1, 2]], dtype=np.float32)
+    k = max(1.0, intensity * 4.0)
+    kernel = np.array([[-k, -k/2, 0],
+                       [-k/2,  1, k/2],
+                       [ 0,  k/2, k]], dtype=np.float32)
     embossed = cv2.filter2D(frame, -1, kernel)
-    return cv2.addWeighted(frame, 1.0 - intensity, embossed, intensity, 0)
+    weight_emboss = min(1.0, intensity * 2.0)
+    weight_orig = max(0.0, 1.0 - intensity * 1.5)
+    return cv2.addWeighted(frame, weight_orig, embossed, weight_emboss, 0)
 
 def apply_style(frame, intensity):
     h, w = frame.shape[:2]
     small = cv2.resize(frame, (w // 2, h // 2))
-    sigma_s = float(max(1.0, intensity * 100))
-    styled = cv2.stylization(small, sigma_s=sigma_s, sigma_r=0.45)
+    # Stylization com valores extremos de desfoque vetorial
+    sigma_s = float(max(1.0, intensity * 200))
+    sigma_r = float(max(0.1, intensity * 0.9))
+    styled = cv2.stylization(small, sigma_s=sigma_s, sigma_r=sigma_r)
     return cv2.resize(styled, (w, h))
+
+def apply_thermal(frame, intensity):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    heatmap = cv2.applyColorMap(gray, cv2.COLORMAP_INFERNO)
+    return cv2.addWeighted(frame, 1.0 - intensity, heatmap, intensity, 0)
+
+def apply_neon_edges(frame, intensity):
+    blur = cv2.GaussianBlur(frame, (5, 5), 0)
+    edges = cv2.Canny(blur, 50, 150)
+    edges_bgr = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+    # Colore as bordas de verde matrix
+    edges_bgr[edges > 0] = [0, 255, 0]
+    dark = (frame * max(0.0, 1.0 - intensity)).astype(np.uint8)
+    res = cv2.addWeighted(dark, 1.0, edges_bgr, intensity * 2.0, 0)
+    return np.clip(res, 0, 255).astype(np.uint8)
+
+def apply_pixelate(frame, intensity):
+    h, w = frame.shape[:2]
+    block = max(1, int(intensity * 100))
+    if block == 1:
+        return frame
+    small = cv2.resize(frame, (max(1, w // block), max(1, h // block)), interpolation=cv2.INTER_LINEAR)
+    return cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
+
+def apply_glitch(frame, intensity):
+    shift = int(intensity * 100)
+    if shift <= 0:
+        return frame
+    result = np.zeros_like(frame)
+    # Canal Azul arrastado pra esquerda, Vermelho pra direita e Verde intacto
+    result[:, :, 0] = np.roll(frame[:, :, 0], -shift, axis=1)
+    result[:, :, 1] = frame[:, :, 1]
+    result[:, :, 2] = np.roll(frame[:, :, 2], shift, axis=1)
+    return result
+
+def apply_psychedelic(frame, intensity):
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV).astype(np.int32)
+    # Muda massivamente o aspect hue das cores do frame
+    shift = int(intensity * 180)
+    hsv[:, :, 0] = (hsv[:, :, 0] + shift) % 180
+    # Aumenta agressivamente a saturação global
+    hsv[:, :, 1] = np.clip(hsv[:, :, 1] + int(intensity * 200), 0, 255)
+    return cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
+
+def apply_ascii_contrast(frame, intensity):
+    # Controle próprio do ASCII para mudar o threshold/contraste 
+    # Mapeamento do slider (0.5 = neutro) para alpha e beta
+    alpha = 0.5 + (intensity * 2.0)  # Contraste
+    beta = (intensity - 0.5) * 100   # Brilho
+    return cv2.convertScaleAbs(frame, alpha=alpha, beta=beta)
 
 class FilterPanel:
     def __init__(self, filters, font, window_width, window_height):
@@ -228,14 +292,21 @@ class ASCIICamera:
             sys.exit(1)
             
         filters = [
+            Filter("ASCII Matrix", apply_ascii_contrast, is_ascii=True),
             Filter("Grayscale", apply_grayscale),
             Filter("Deep Dive", apply_deep_dive),
-            Filter("Noise", apply_noise),
             Filter("Embossed", apply_embossed),
-            Filter("Style", apply_style)
+            Filter("Style", apply_style),
+            Filter("Neon Edges", apply_neon_edges),
+            Filter("Glitch RGB", apply_glitch),
+            Filter("Psychedelic", apply_psychedelic),
+            Filter("Thermal", apply_thermal),
+            Filter("Pixelate TV", apply_pixelate),
+            Filter("Noise", apply_noise)
         ]
         
         self.filter_panel = FilterPanel(filters, self.font, self.window_width, self.window_height)
+        self.filter_panel.active_idx = -1 # Inicialmente Inicia Sem NENHUM filtro ativo (Apenas câmera natural)
         self.aspect_ratio_correction = 0.55
         self.ascii_chars = list(ASCII_CHARS)
         self.invert = False
@@ -273,8 +344,15 @@ class ASCIICamera:
             return None
         return cv2.flip(frame, 1)
 
-    def frame_to_ascii(self, frame):
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    def frame_to_ascii(self, frame, active_filter=None):
+        """Conversão em ASCII via Numpy, utilizando os parâmetros de controle de imagem se ativos"""
+        # Se for o filtro próprio do ASCII, podemos regular a intensidade e brilho
+        if active_filter and active_filter.is_ascii:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            gray = active_filter.apply_fn(gray, active_filter.intensity)
+        else:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            
         orig_h, orig_w = gray.shape
         
         target_ratio = (self.cols / self.rows) * self.aspect_ratio_correction
@@ -323,7 +401,10 @@ class ASCIICamera:
         self.screen.fill(BG_COLOR)
         
         # O filtro aplica-se no frame raw (capturado)
-        filtered_frame = active_filter.apply_fn(frame, active_filter.intensity)
+        if active_filter is not None:
+            filtered_frame = active_filter.apply_fn(frame, active_filter.intensity)
+        else:
+            filtered_frame = frame
         
         # O OpenCV puxa BGR mas Pygame usa RGB 
         rgb_frame = cv2.cvtColor(filtered_frame, cv2.COLOR_BGR2RGB)
@@ -378,12 +459,13 @@ class ASCIICamera:
             if frame is not None:
                 active_filter = self.filter_panel.get_active_filter()
                 
-                if active_filter is None:
+                # Se active_filter é do tipo is_ascii, desenha em caracteres
+                if active_filter is not None and active_filter.is_ascii:
                     # Pipeline ASCII puro (Inversão permitida)
-                    indices = self.frame_to_ascii(frame)
+                    indices = self.frame_to_ascii(frame, active_filter)
                     self.render_ascii(indices)
                 else:
-                    # Pipeline Image/Filter (Inversão tem pouco sentido com imagens visuais diretas, logo é desconsiderada)
+                    # Pipeline Image/Filter - Caso ativo caia em None, cai para a camera pura aqui tbm
                     self.render_image_filter(frame, active_filter)
                 
             self.filter_panel.draw(self.screen)
