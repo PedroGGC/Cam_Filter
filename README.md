@@ -20,13 +20,16 @@ Além do modo ASCII clássico (preto e branco em densidade configurável), o pro
 Há pipelines paralelos de processamento que podem ser selecionados livremente no grid cinza:
 
 1. Modo de Letras (Inativo): Leitura quantizada do brilho natural transposto via fontes cache mode quantificadas pelo pygame array pointer.
-2. Deep Dive: Reduz agressivamente e quantiza paletas gerando visuais parecidos com fotografias desativadas retro antigas das maquinas de bits antigos.
-3. Style: Um algoritmo vetor e stylization que emula traços artísticos diluindo o ruído a favor de massas de cores de agua mais cheias.
-4. Neon Edges: Contrai e detecta bordas injetando dilatadores radioativos fluorescentes.
-5. Glitch RGB: Interrompe e empurra frames RGB causando dissincronia virtual vermelha e azul (Efeito TV com sinal fraco).
-6. Pixelate TV: Força uma interpolação por proximidade bruta transformando você em blocos massivos quadrados.
-7. Pencil Sketch: Gera inversões blur sobre a paleta cinza desenhando o ambiente como obra em papel.
-8. Cyberpunk: Mapa que desloca tonalidades pra rosa escuro contra branco e ciano usando LUTs em C++.
+2. Gameboy Camera: Espreme as cores da sua camera forçando os 4 tons clássicos em blocos de pixels estilo Nintendo.
+3. Blueprint Plan: Converte tudo em um papel azul fosco arquitetônico e detecta profundidade com derivados de matriz para giz branco e ciano.
+4. CRT Monitor: Entorta as bordas simulando um tubo analógico antigo de TV convexa com scanlines horizontais escuras.
+5. Halftone Art: Arte estilo jornal antigo. Troca a luz natural por uma ilusão de óptica com bolinhas de tinta espaçadas/largas em tons pretos e cinzas.
+6. Ghost Trails: Fricciona todos os quadros passados segurando movimentos fantasma das bordas.
+7. Neon Edges: Contrai e detecta bordas injetando dilatadores radioativos fluorescentes.
+8. Pixelate TV: Força uma interpolação por proximidade bruta transformando você em blocos massivos quadrados.
+9. Pencil Sketch: Gera inversões blur sobre a paleta cinza desenhando o ambiente como obra em papel.
+10. Glitch RGB: Interrompe e empurra frames RGB causando dissincronia virtual vermelha e azul simulando falha.
+11. Deep Dive: Reduz agressivamente e quantiza paletas gerando visuais retro.
 
 Através dos Sliders de Intensidade, há campos dinâmicos integrados para se digitar porcentagens de 0-100 para regular com precisão do teclado a mistura visual.
 
@@ -42,34 +45,38 @@ Para executar esse projeto voce precisa ter o **Python** instalado em sua maquin
 Se o seu Python ja estiver instalado e configurado, basta abrir o Prompt de Comando (CMD) ou PowerShell na pasta do projeto e executar a construcao final:
 
 ```bash
-pip install opencv-python numpy pygame
+pip install opencv-python numpy pygame pyvirtualcam
 ```
 
 ---
 
-## Como Comecar
+## Como Comecar o Projeto
 
-Com tudo pronto, apenas ative a ferramenta utilizando:
+O software se baseia em duas abordagens separadas de execução, depedendo da sua necessidade:
 
+### 1. Uso Local Padrão (Full Screen)
+
+Exibe a interface e roda a câmera visualmente grande no seu monitor para uso privado ou de teste fechado em tela cheia com atalhos de mouse.
+
+No seu terminal, digite:
+
+```bash
 python main.py
+```
 
-Para uso de atalhos e utilidades ao longo da utilizacao:
+### 2. Uso de Transmissão (Discord, OBS, etc.)
 
-- Tecla Q ou ESC: Interrompe o processo finalizando com segurança a ocupação da sua webcam nativa.
-- Tecla I: Inverte cores (Restrito ao modo padrao de teclado).
+Esse método reduz a interface rodando localmente para uma janela fina estilo "Painel de Controle Remoto". Ele oculta o vídeo da sua tela primária, e passa a entregar a força total dos filtros silenciosamente num formato Universal de Webcam em plano de fundo pela sua placa de vídeo. Pelo OBS Studio ou selecionando "OBS Virtual Camera" no Discord, você poderá surpreender a todos sem que vejam o painel aberto.
 
+No terminal, digite:
+
+```bash
+python virtual_cam.py
 
 ---
 
-## Customizacoes Base
+## Atalhos do Sistema
 
-As cores do modo em letras podem ser modificadas logo no topo do arquivo main.py:
-
-```python
-FONT_SIZE = 14
-FG_COLOR = (255, 255, 255)
-BG_COLOR = (0, 0, 0)
-ASCII_CHARS = " .':-=+*#%@$"
+- Tecla Q ou ESC: Interrompe o processo finalizando com segurança a ocupação da tela e do terminal.
+- Tecla I: Inverte cores (Restrito ao modo nativo de letras ASCII).
 ```
-
-
