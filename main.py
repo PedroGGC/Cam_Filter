@@ -22,16 +22,6 @@ class Filter:
         self.intensity = 0.5
         self.is_ascii = is_ascii
 
-def apply_grayscale(frame, intensity):
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    # Valores agudos para alto contraste e sombras profundas em intensidade máxima
-    alpha = 1.0 + (intensity * 2.0)
-    beta = -50 * intensity
-    gray = cv2.convertScaleAbs(gray, alpha=alpha, beta=beta)
-    gray_bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
-    weight_gray = min(1.0, intensity * 1.5)
-    weight_color = max(0.0, 1.0 - weight_gray)
-    return cv2.addWeighted(frame, weight_color, gray_bgr, weight_gray, 0)
 
 def apply_deep_dive(frame, intensity):
     # Quantização agressiva: intenso = menos de 4 cores
@@ -39,24 +29,6 @@ def apply_deep_dive(frame, intensity):
     ratio = 256.0 / levels
     quantized = np.floor(frame / ratio) * ratio
     return quantized.astype(np.uint8)
-
-def apply_noise(frame, intensity):
-    # Amplificado de 80 pra 200 de saltos no RGB
-    max_noise = int(intensity * 200)
-    if max_noise <= 0:
-        return frame
-    noise = np.random.randint(0, max_noise + 1, frame.shape, dtype=np.uint8)
-    return cv2.add(frame, noise)
-
-def apply_embossed(frame, intensity):
-    k = max(1.0, intensity * 4.0)
-    kernel = np.array([[-k, -k/2, 0],
-                       [-k/2,  1, k/2],
-                       [ 0,  k/2, k]], dtype=np.float32)
-    embossed = cv2.filter2D(frame, -1, kernel)
-    weight_emboss = min(1.0, intensity * 2.0)
-    weight_orig = max(0.0, 1.0 - intensity * 1.5)
-    return cv2.addWeighted(frame, weight_orig, embossed, weight_emboss, 0)
 
 def apply_style(frame, intensity):
     h, w = frame.shape[:2]
@@ -67,19 +39,23 @@ def apply_style(frame, intensity):
     styled = cv2.stylization(small, sigma_s=sigma_s, sigma_r=sigma_r)
     return cv2.resize(styled, (w, h))
 
-def apply_thermal(frame, intensity):
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    heatmap = cv2.applyColorMap(gray, cv2.COLORMAP_INFERNO)
-    return cv2.addWeighted(frame, 1.0 - intensity, heatmap, intensity, 0)
-
 def apply_neon_edges(frame, intensity):
     blur = cv2.GaussianBlur(frame, (5, 5), 0)
     edges = cv2.Canny(blur, 50, 150)
-    edges_bgr = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
-    # Colore as bordas de verde matrix
-    edges_bgr[edges > 0] = [0, 255, 0]
+    # Dilatação leve para aumentar as "linhas" do neon
+    kernel = np.ones((2, 2), np.uint8)
+    edges = cv2.dilate(edges, kernel, iterations=1)
+    
+    edges_bgr = np.zeros_like(frame)
+    edges_bgr[edges > 0] = [0, 255, 65]  # Verde Neon
+
+    # Adicionar um desfoque em cima da imagem preta de bordas para brilhar (glow)
+    glow = cv2.GaussianBlur(edges_bgr, (15, 15), 0)
+    edges_with_glow = cv2.addWeighted(edges_bgr, 1.0, glow, 2.0, 0)
+    
+    # Misturar com o cenário real em menor intensidade
     dark = (frame * max(0.0, 1.0 - intensity)).astype(np.uint8)
-    res = cv2.addWeighted(dark, 1.0, edges_bgr, intensity * 2.0, 0)
+    res = cv2.addWeighted(dark, 1.0, edges_with_glow, intensity * 2.0, 0)
     return np.clip(res, 0, 255).astype(np.uint8)
 
 def apply_pixelate(frame, intensity):
@@ -101,21 +77,34 @@ def apply_glitch(frame, intensity):
     result[:, :, 2] = np.roll(frame[:, :, 2], shift, axis=1)
     return result
 
-def apply_psychedelic(frame, intensity):
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV).astype(np.int32)
-    # Muda massivamente o aspect hue das cores do frame
-    shift = int(intensity * 180)
-    hsv[:, :, 0] = (hsv[:, :, 0] + shift) % 180
-    # Aumenta agressivamente a saturação global
-    hsv[:, :, 1] = np.clip(hsv[:, :, 1] + int(intensity * 200), 0, 255)
-    return cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
+def apply_pencil_sketch(frame, intensity):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    inv = cv2.bitwise_not(gray)
+    blur_size = int(intensity * 40) * 2 + 1 
+    if blur_size < 3: blur_size = 3
+    blur = cv2.GaussianBlur(inv, (blur_size, blur_size), 0)
+    # O Sketch emula desenho usando divisão simples
+    sketch = cv2.divide(gray, 255 - blur, scale=256)
+    sketch_bgr = cv2.cvtColor(sketch, cv2.COLOR_GRAY2BGR)
+    weight = min(1.0, intensity * 1.5)
+    return cv2.addWeighted(frame, 1.0 - weight, sketch_bgr, weight, 0)
 
-def apply_ascii_contrast(frame, intensity):
-    # Controle próprio do ASCII para mudar o threshold/contraste 
-    # Mapeamento do slider (0.5 = neutro) para alpha e beta
-    alpha = 0.5 + (intensity * 2.0)  # Contraste
-    beta = (intensity - 0.5) * 100   # Brilho
-    return cv2.convertScaleAbs(frame, alpha=alpha, beta=beta)
+
+def apply_cyberpunk(frame, intensity):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    # ColorMap COOL renderiza Cyan em tons claros e Magenta/Purple em tons escuros
+    cmap = cv2.applyColorMap(gray, cv2.COLORMAP_COOL)
+    return cv2.addWeighted(frame, 1.0 - intensity, cmap, intensity, 0)
+
+def apply_ascii_contrast(gray_frame, intensity):
+    # CLAHE Equaliza o histograma revelando feições ocultas na sombra (Vital para o ASCII em salas escuras)
+    limit = 1.0 + (intensity * 4.0)
+    clahe = cv2.createCLAHE(clipLimit=limit, tileGridSize=(8,8))
+    enhanced = clahe.apply(gray_frame)
+    # Mapping
+    alpha = 1.0 + (intensity * 1.5)  # Multiplicador de Contraste
+    beta = (intensity - 0.5) * 50    # Aditivo de brilho
+    return cv2.convertScaleAbs(enhanced, alpha=alpha, beta=beta)
 
 class FilterPanel:
     def __init__(self, filters, font, window_width, window_height):
@@ -293,16 +282,13 @@ class ASCIICamera:
             
         filters = [
             Filter("ASCII Matrix", apply_ascii_contrast, is_ascii=True),
-            Filter("Grayscale", apply_grayscale),
             Filter("Deep Dive", apply_deep_dive),
-            Filter("Embossed", apply_embossed),
             Filter("Style", apply_style),
             Filter("Neon Edges", apply_neon_edges),
             Filter("Glitch RGB", apply_glitch),
-            Filter("Psychedelic", apply_psychedelic),
-            Filter("Thermal", apply_thermal),
             Filter("Pixelate TV", apply_pixelate),
-            Filter("Noise", apply_noise)
+            Filter("Pencil Sketch", apply_pencil_sketch),
+            Filter("Cyberpunk", apply_cyberpunk)
         ]
         
         self.filter_panel = FilterPanel(filters, self.font, self.window_width, self.window_height)
