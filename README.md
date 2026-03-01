@@ -40,8 +40,7 @@ Através dos Sliders de Intensidade, há campos dinâmicos integrados para se di
 Para executar esse projeto voce precisa ter o **Python** instalado em sua maquina. Caso nao tenha, siga os passos abaixo para garantir que o ambiente seja configurado corretamente e comandos funcionem sem erros:
 
 1. **Baixe o Python Oficial**: Acesse o site oficial atraves do link [https://www.python.org/downloads/](https://www.python.org/downloads/) e faca o download da versao mais recente para o Windows.
-2. **Adicione o Python ao PATH**: Abra o executavel do instalador. Na primeira tela (antes de clicar em "Install Now"), marque obrigatoriamente a caixa de selecao que diz **"Add Python to PATH"** (ou "Add python.exe to PATH") no rodape da janela. Isso e critico para o proximo passo funcionar.
-
+2. **Adicione o Python ao PATH**: marque obrigatoriamente a caixa de selecao que diz **"Add Python to PATH"** (ou "Add python.exe to PATH") no rodape da janela.
 Se o seu Python ja estiver instalado e configurado, basta abrir o Prompt de Comando (CMD) ou PowerShell na pasta do projeto e executar a construcao final:
 
 ```bash
@@ -66,7 +65,7 @@ python main.py
 
 ### 2. Uso de Transmissão (Discord, OBS, etc.)
 
-Esse método reduz a interface rodando localmente para uma janela fina estilo "Painel de Controle Remoto". Ele oculta o vídeo da sua tela primária, e passa a entregar a força total dos filtros silenciosamente num formato Universal de Webcam em plano de fundo pela sua placa de vídeo. Pelo OBS Studio ou selecionando "OBS Virtual Camera" no Discord, você poderá surpreender a todos sem que vejam o painel aberto.
+Esse método reduz a interface rodando localmente para uma janela fina estilo "Painel de Controle Remoto". Ele oculta o vídeo da sua tela primária, e passa a entregar a força total dos filtros silenciosamente num formato Universal de Webcam em plano de fundo pela sua placa de vídeo.
 
 No terminal, digite:
 
