@@ -29,6 +29,15 @@ class FilterPanel:
         self.toggle_width = 24
         self.toggle_height = 60
         
+        # Static Text Cache
+        self.cached_title_text = self.ui_font.render("FILTROS", True, (130, 130, 140))
+        self.cached_val_text = self.small_font.render("Intensidade:", True, (160, 160, 170))
+        self.cached_filter_names = []
+        for f in self.filters:
+            inactive_text = self.ui_font.render(f.name, True, (160, 160, 170))
+            active_text = self.ui_font.render(f.name, True, ACTIVE_HIGHLIGHT)
+            self.cached_filter_names.append((inactive_text, active_text))
+
         # Rects
         self.update_rects()
 
@@ -160,19 +169,17 @@ class FilterPanel:
         pygame.draw.rect(surface, PANEL_BG, self.rect)
         pygame.draw.line(surface, PANEL_BORDER, (self.rect.x, self.rect.y), (self.rect.x, self.rect.bottom), 1)
         
-        title_text = self.ui_font.render("FILTROS", True, (130, 130, 140))
-        surface.blit(title_text, (self.rect.x + 20, self.rect.y + 20))
+        surface.blit(self.cached_title_text, (self.rect.x + 20, self.rect.y + 20))
         
         for i, (f, rect) in enumerate(zip(self.filters, self.filter_rects)):
             if i == self.active_idx:
                 pygame.draw.rect(surface, (45, 45, 55), rect, border_radius=8)
                 pygame.draw.rect(surface, ACTIVE_HIGHLIGHT, rect, width=2, border_radius=8)
-                color = ACTIVE_HIGHLIGHT
+                text = self.cached_filter_names[i][1]
             else:
                 pygame.draw.rect(surface, (22, 22, 26), rect, border_radius=8)
-                color = (160, 160, 170)
+                text = self.cached_filter_names[i][0]
                 
-            text = self.ui_font.render(f.name, True, color)
             text_rect = text.get_rect(midleft=(rect.x + 15, rect.centery))
             surface.blit(text, text_rect)
             
@@ -180,8 +187,7 @@ class FilterPanel:
             f = self.filters[self.active_idx]
             slider_y = self.filter_rects[-1].bottom + 50
             
-            val_text = self.small_font.render("Intensidade:", True, (160, 160, 170))
-            surface.blit(val_text, (self.rect.x + 18, slider_y - 25))
+            surface.blit(self.cached_val_text, (self.rect.x + 18, slider_y - 25))
             
             track_start = self.rect.x + 18
             track_end = self.rect.right - 18 - 60
