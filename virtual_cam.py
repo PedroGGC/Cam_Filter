@@ -2,7 +2,14 @@ import cv2
 import pygame
 import numpy as np
 import pyvirtualcam
+import logging
 from main import Filters_cam
+
+logging.basicConfig(
+    filename='virtual_cam.log',
+    level=logging.ERROR,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 class VirtualFilters_cam(Filters_cam):
     def __init__(self):
@@ -100,7 +107,7 @@ class VirtualFilters_cam(Filters_cam):
                             cam.send(np.ascontiguousarray(frame_vcam))
                             cam.sleep_until_next_frame()
                         except RuntimeError:
-                            pass
+                            logging.error("Failed to transmit frame to virtual camera", exc_info=True)
                         
                     # Desenhar SOMENTE a interface na janela mini local
                     self.filter_panel.draw(self.screen)
