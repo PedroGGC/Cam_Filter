@@ -164,9 +164,19 @@ def apply_ghost_trails(frame, intensity):
     apply_ghost_trails.last_frame = res
     return res.astype(np.uint8)
 
+import threading
+
+_CLAHE_LOCAL = threading.local()
+
+def get_clahe():
+    if not hasattr(_CLAHE_LOCAL, "clahe"):
+        _CLAHE_LOCAL.clahe = cv2.createCLAHE(tileGridSize=(8,8))
+    return _CLAHE_LOCAL.clahe
+
 def apply_ascii_contrast(gray_frame, intensity):
     limit = 1.0 + (intensity * 4.0)
-    clahe = cv2.createCLAHE(clipLimit=limit, tileGridSize=(8,8))
+    clahe = get_clahe()
+    clahe.setClipLimit(limit)
     enhanced = clahe.apply(gray_frame)
     alpha = 1.0 + (intensity * 1.5)
     beta = (intensity - 0.5) * 50
