@@ -35,8 +35,10 @@ class Filters_cam:
             Filter("Ghost Trails", apply_ghost_trails),
             Filter("Pixelate TV", apply_pixelate),
             Filter("Pencil Sketch", apply_pencil_sketch),
-            Filter("Glitch RGB", apply_glitch),
-            Filter("Deep Dive", apply_deep_dive)
+            Filter("Deep Dive", apply_deep_dive),
+            Filter("Hologram Display", apply_hologram),
+            Filter("Dot Matrix", apply_dither),
+            Filter("VGA 16-Color", apply_vga)
         ]
         
         self.filter_panel = FilterPanel(filters, self.font, self.window_width, self.window_height)

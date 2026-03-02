@@ -111,16 +111,6 @@ def apply_pixelate(frame, intensity):
     small = cv2.resize(frame, (max(1, w // block), max(1, h // block)), interpolation=cv2.INTER_LINEAR)
     return cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
 
-def apply_glitch(frame, intensity):
-    shift = int(intensity * 100)
-    if shift <= 0:
-        return frame
-    result = np.zeros_like(frame)
-    result[:, :, 0] = np.roll(frame[:, :, 0], -shift, axis=1)
-    result[:, :, 1] = frame[:, :, 1]
-    result[:, :, 2] = np.roll(frame[:, :, 2], shift, axis=1)
-    return result
-
 def apply_pencil_sketch(frame, intensity):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     inv = cv2.bitwise_not(gray)
@@ -181,3 +171,82 @@ def apply_ascii_contrast(gray_frame, intensity):
     alpha = 1.0 + (intensity * 1.5)
     beta = (intensity - 0.5) * 50
     return cv2.convertScaleAbs(enhanced, alpha=alpha, beta=beta)
+
+def apply_hologram(frame, intensity):
+    # Cyan edges, scanlines, glow
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(blur, 50, 150)
+    
+    # Coloring (Cyan in BGR)
+    holo = np.zeros_like(frame)
+    holo[edges > 0] = [255, 255, 0]
+    
+    # Scanlines
+    h, w = frame.shape[:2]
+    scanlines = np.ones((h, w, 3), dtype=np.float32)
+    scanlines[::3, :] = 0.5 
+    
+    holo = (holo * scanlines).astype(np.uint8)
+    
+    # Glow
+    glow = cv2.GaussianBlur(holo, (11, 11), 0)
+    holo_with_glow = cv2.addWeighted(holo, 1.0, glow, 1.5, 0)
+    
+    dark = (frame * max(0.0, 1.0 - intensity)).astype(np.uint8)
+    return cv2.addWeighted(dark, 1.0, holo_with_glow, intensity * 2.0, 0)
+
+def apply_dither(frame, intensity):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape
+    
+    # 4x4 Bayer matrix
+    bayer = np.array([[ 0,  8,  2, 10],
+                      [12,  4, 14,  6],
+                      [ 3, 11,  1,  9],
+                      [15,  7, 13,  5]]) * 16
+    
+    tiles_y = h // 4 + 1
+    tiles_x = w // 4 + 1
+    matrix = np.tile(bayer, (tiles_y, tiles_x))[:h, :w]
+    
+    dithered = np.where(gray > matrix, 255, 0).astype(np.uint8)
+    result = cv2.cvtColor(dithered, cv2.COLOR_GRAY2BGR)
+    
+    pixel_size = max(1, int(intensity * 4))
+    if pixel_size > 1:
+        small = cv2.resize(result, (max(1, w // pixel_size), max(1, h // pixel_size)), interpolation=cv2.INTER_LINEAR)
+        result = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
+        
+    return cv2.addWeighted(frame, 1.0 - intensity, result, intensity, 0)
+
+def apply_vga(frame, intensity):
+    # 16-color EGA/VGA palette (BGR)
+    palette = np.array([
+        [0,0,0], [170,0,0], [0,170,0], [170,170,0],
+        [0,0,170], [170,0,170], [0,170,170], [170,170,170],
+        [85,85,85], [255,85,85], [85,255,85], [255,255,85],
+        [85,85,255], [255,85,255], [85,255,255], [255,255,255]
+    ], dtype=np.uint8)
+    
+    h, w = frame.shape[:2]
+    pixel_size = max(1, int(intensity * 8))
+    
+    if pixel_size > 1:
+        small = cv2.resize(frame, (max(1, w // pixel_size), max(1, h // pixel_size)), interpolation=cv2.INTER_LINEAR)
+    else:
+        small = frame
+        
+    flat = small.reshape(-1, 3).astype(np.int32)
+    pal = palette.reshape(1, 16, 3).astype(np.int32)
+    # L1 distance is faster than L2 here
+    dists = np.sum(np.abs(flat[:, None, :] - pal), axis=2)
+    indices = np.argmin(dists, axis=1)
+    
+    quantized = palette[indices].reshape(small.shape)
+    
+    if pixel_size > 1:
+        quantized = cv2.resize(quantized, (w, h), interpolation=cv2.INTER_NEAREST)
+        
+    return cv2.addWeighted(frame, 1.0 - intensity, quantized, intensity, 0)
+
