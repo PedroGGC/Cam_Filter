@@ -1,3 +1,4 @@
+import sys
 import cv2
 import pygame
 import numpy as np
@@ -52,6 +53,8 @@ class VirtualFilters_cam(Filters_cam):
                         elif event.type == pygame.KEYDOWN:
                             if event.key == pygame.K_q or event.key == pygame.K_ESCAPE:
                                 self.running = False
+                            elif event.key == pygame.K_c and (pygame.key.get_mods() & pygame.KMOD_CTRL):
+                                self.running = False
                             elif event.key == pygame.K_i:
                                 self.invert = not self.invert
                                 
@@ -61,17 +64,18 @@ class VirtualFilters_cam(Filters_cam):
                     if frame is not None:
                         active_filter = self.filter_panel.get_active_filter()
                         
-                        # Limpa o canvas fantasma interno
-                        self.camera_surface.fill((0, 0, 0))
-                        
                         if active_filter is not None and active_filter.is_ascii:
-                            indices = self.frame_to_ascii(frame, active_filter)
-                            
+                            # ==========================================================
+                            # 1. PROCESSAMENTO ASCII (Usa Pygame e Numpy Otimizado)
+                            # ==========================================================
                             if self.invert:
                                 self.camera_surface.fill((255, 255, 255))
                                 chars = self.char_surfaces_inverted
                             else:
+                                self.camera_surface.fill((0, 0, 0))
                                 chars = self.char_surfaces_normal
+                                
+                            indices = self.frame_to_ascii(frame, active_filter)
                                 
                             blits_data = [
                                 (chars[char_idx], (self.xs[j], self.ys[i]))
@@ -80,24 +84,31 @@ class VirtualFilters_cam(Filters_cam):
                                 if char_idx != 0 
                             ]
                             self.camera_surface.blits(blits_data)
+                            
+                            # OTIMIZAÇÃO: Exporta raw bytes na ordem nativa, custa quase 0 de processamento
+                            buffer = pygame.image.tobytes(self.camera_surface, "RGB")
+                            frame_vcam = np.frombuffer(buffer, dtype=np.uint8).reshape((self.v_height, self.v_width, 3))
+                            
                         else:
+                            # ==========================================================
+                            # 2. PROCESSAMENTO NORMAL / SEM FILTRO (Usa puramente OpenCV)
+                            # ==========================================================
                             if active_filter is not None:
                                 filtered_frame = active_filter.apply_fn(frame, active_filter.intensity)
                             else:
                                 filtered_frame = frame
                                 
                             rgb_frame = cv2.cvtColor(filtered_frame, cv2.COLOR_BGR2RGB)
-                            py_img = pygame.image.frombuffer(rgb_frame.tobytes(), (rgb_frame.shape[1], rgb_frame.shape[0]), "RGB")
-                            scaled_img = pygame.transform.smoothscale(py_img, (self.v_width, self.v_height))
-                            self.camera_surface.blit(scaled_img, (0, 0))
                             
-                        # Extrair a matrix da surface EXCLUSIVA e transpor para o formato nativo da cam virtual
-                        pixel_data = pygame.surfarray.array3d(self.camera_surface)
-                        frame_vcam = np.transpose(pixel_data, (1, 0, 2))
-                        
+                            # OTIMIZAÇÃO: Redimensiona nativamente em C++ via cv2 em vez do pygame
+                            if rgb_frame.shape[1] != self.v_width or rgb_frame.shape[0] != self.v_height:
+                                frame_vcam = cv2.resize(rgb_frame, (self.v_width, self.v_height), interpolation=cv2.INTER_LINEAR)
+                            else:
+                                frame_vcam = rgb_frame
+
                         try:
-                            # Contíguo garante que a memória numpy seja linear para envio rápido
-                            cam.send(np.ascontiguousarray(frame_vcam))
+                            # Agora "frame_vcam" sempre está em um formato C-contíguo por natureza
+                            cam.send(frame_vcam)
                             cam.sleep_until_next_frame()
                         except RuntimeError:
                             pass
@@ -106,6 +117,10 @@ class VirtualFilters_cam(Filters_cam):
                     self.filter_panel.draw(self.screen)
                     pygame.display.flip()
 
+        except KeyboardInterrupt:
+            print("====================================")
+            print("Ação cancelada pelo usuário (Ctrl+C).")
+            print("====================================")
         except Exception as e:
             print("====================================")
             print("Erro Crítico da Câmera Virtual!")
@@ -113,8 +128,12 @@ class VirtualFilters_cam(Filters_cam):
             print("====================================")
         finally:
             print("Encerrando captura e transmissao...")
-            self.cap.release()
+            try:
+                self.cap.release()
+            except:
+                pass
             pygame.quit()
+            sys.exit(0)
 
 if __name__ == "__main__":
     app = VirtualFilters_cam()
